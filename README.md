@@ -76,9 +76,12 @@ To execute the container, run:
 sh docker/run_gaussian_pro_docker.sh
 ```
 
-#### Download the demo Waymo scene: Segment-102751
+#### Download the Waymo scenes: Segment-102751,100613,132384,144248,405841,164701,150623,113792
 ```
 wget https://drive.google.com/file/d/1DXQRBcUIrnIC33WNq8pVLKZ_W1VwON3k/view?usp=sharing
+https://drive.google.com/file/d/1DEDt8sNshAlmcwbp_KleeNYf_Jq0fy4u/view?usp=sharing
+https://drive.google.com/file/d/1J7_IA2w4-u51lCmtmMA5CDxXR4Dbkeoq/view?usp=sharing
+https://rec.ustc.edu.cn/share/d34a0370-2bb2-11f0-b128-73c0ccb2577f  password：ux3p
 ```
 
 #### Besides the public datasets, we also test GaussianPro from random selected Youtube videos and find consistent improvement. The processed data is provided below. 
