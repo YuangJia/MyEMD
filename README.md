@@ -76,7 +76,7 @@ To execute the container, run:
 sh docker/run_gaussian_pro_docker.sh
 ```
 
-#### Download the Waymo scenes: Segment-102751,100613,132384,144248,405841,164701,150623,113792
+#### Download the Waymo scenes: Segment-102751,100613,132384,144248,148697,405841,164701,150623,113792
 ```
 wget https://drive.google.com/file/d/1DXQRBcUIrnIC33WNq8pVLKZ_W1VwON3k/view?usp=sharing
 https://drive.google.com/file/d/1DEDt8sNshAlmcwbp_KleeNYf_Jq0fy4u/view?usp=sharing
