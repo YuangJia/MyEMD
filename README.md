@@ -142,10 +142,9 @@ If you find this project useful in your research, please consider cite:
 
 
 ```BibTeX
-@article{cheng2024gaussianpro,
-  title={GaussianPro: 3D Gaussian Splatting with Progressive Propagation},
+@inproceedings{cheng2024gaussianpro,
+  title={Gaussianpro: 3d gaussian splatting with progressive propagation},
   author={Cheng, Kai and Long, Xiaoxiao and Yang, Kaizhi and Yao, Yao and Yin, Wei and Ma, Yuexin and Wang, Wenping and Chen, Xuejin},
-  journal={arXiv preprint arXiv:2402.14650},
-  year={2024}
+  booktitle={Forty-first International Conference on Machine Learning}
 }
 ```
