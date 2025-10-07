@@ -701,7 +701,7 @@ def getNerfppNorm(cam_info):
 
 def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder, dynamic_mask_folder=None, sky_seg=False,
                       load_normal=False,
-                      load_depth=False, time_diff=1.0, total_length=100,ori=True,read_test=False, train_cam_infos=None):
+                      load_depth=False, time_diff=1.0, total_length=100):
     cam_infos = []
     for idx, key in enumerate(cam_extrinsics):
         sys.stdout.write('\r')
@@ -731,30 +731,9 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder, dynamic_mas
         else:
             assert False, "Colmap camera model not handled: only undistorted datasets (PINHOLE or SIMPLE_PINHOLE cameras) supported!"
 
-        # image_path = os.path.join(images_folder, os.path.basename(extr.name))
-        # image_name = os.path.basename(image_path).split(".")[0]
-        # image = Image.open(image_path)
-
-        image_filename = os.path.basename(extr.name)
-        if ori:
-            image_path = os.path.join(images_folder, image_filename)
-        else:
-            name, ext = os.path.splitext(image_filename)  # 分离文件名和扩展名
-            if "offset_05" in images_folder:
-                image_path = os.path.join(images_folder, f"{name}_o1{ext}")
-            elif "offset_10" in images_folder:
-                image_path = os.path.join(images_folder, f"{name}_o2{ext}")
-            elif "offset_15" in images_folder:
-                image_path = os.path.join(images_folder, f"{name}_o3{ext}")
-            elif "offset_20" in images_folder:
-                image_path = os.path.join(images_folder, f"{name}_o4{ext}")
-            else:
-                image_path = os.path.join(images_folder, f"{name}_o5{ext}")
-
+        image_path = os.path.join(images_folder, os.path.basename(extr.name))
         image_name = os.path.basename(image_path).split(".")[0]
         image = Image.open(image_path)
-
-
         # with Image.open(image_path) as img:
         #     image = img.convert("RGB")
         dynamic_image = None
@@ -774,7 +753,8 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder, dynamic_mas
             else:
                 sky_path = image_path.replace("images", "sky_mask")
                 # print(f"sky_path_1:{sky_path}")
-            sky_mask = Image.open(sky_path)
+
+            sky_mask = cv2.imread(sky_path, cv2.IMREAD_GRAYSCALE)  # shape=(H,W), uint8
             # 反转（原来白色255→0，黑色0→255）
             # sky_mask = 255 - sky_mask
             # sky_mask = (sky_mask > 0).astype(np.uint8)
@@ -797,36 +777,10 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder, dynamic_mas
 
         # to do level3
         cam_no = 0
-        if read_test and train_cam_infos is not None:
-            test_z = T[-1]  # 用 z 坐标
-            # 提取训练集 (id, z)
-            train_pairs = [(float(c.time), float(c.T[-1])) for c in train_cam_infos]
-            train_pairs = sorted(train_pairs, key=lambda x: x[0])  # 按 id 排序
-            matched_time = None
-            for i in range(len(train_pairs) - 1):
-                id1, z1 = train_pairs[i]
-                id2, z2 = train_pairs[i + 1]
-                if (z1 <= test_z <= z2) or (z2 <= test_z <= z1):
-                    ratio = (test_z - z1) / (z2 - z1)
-                    matched_time = id1 + ratio * (id2 - id1)
-                    print("时间匹配完成!")
-                    break
-            if matched_time is None:
-                # 没找到区间 → 用最近的训练id
-                closest = min(train_pairs, key=lambda p: abs(p[1] - test_z))
-                matched_time = closest[0]
-
-        if read_test and matched_time is not None:
-            cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=image, dynamic_image=dynamic_image,
-                                  image_path=image_path, image_name=image_name, width=width, height=height,
-                                  K=intr.params, sky_mask=sky_mask, normal=normal, depth=depth, time=float(matched_time),
-                                  time_diff=time_diff, cam_no=cam_no)
-        else:
-            cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=image, dynamic_image=dynamic_image,
-                                  image_path=image_path, image_name=image_name, width=width, height=height,
-                                  K=intr.params, sky_mask=sky_mask, normal=normal, depth=depth, time=time,
-                                  time_diff=time_diff, cam_no=cam_no)
-
+        cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=image, dynamic_image=dynamic_image,
+                              image_path=image_path, image_name=image_name, width=width, height=height,
+                              K=intr.params, sky_mask=sky_mask, normal=normal, depth=depth, time=time,
+                              time_diff=time_diff, cam_no=cam_no)
         cam_infos.append(cam_info)
     sys.stdout.write('\n')
     return cam_infos
@@ -837,7 +791,8 @@ def fetchPly(path):
     vertices = plydata['vertex']
     positions = np.vstack([vertices['x'], vertices['y'], vertices['z']]).T
     colors = np.vstack([vertices['red'], vertices['green'], vertices['blue']]).T / 255.0
-    normals = np.vstack([vertices['nx'], vertices['ny'], vertices['nz']]).T
+    # normals = np.vstack([vertices['nx'], vertices['ny'], vertices['nz']]).T
+    normals = np.zeros_like(positions)
     return BasicPointCloud(points=positions, colors=colors, normals=normals)
 
 
@@ -846,8 +801,7 @@ def fetchPlyAnchor(path, sample_ratio=0.6):
     vertices = plydata['vertex']
     positions = np.vstack([vertices['x'], vertices['y'], vertices['z']]).T
     colors = np.vstack([vertices['red'], vertices['green'], vertices['blue']]).T / 255.0
-    # normals = np.vstack([vertices['nx'], vertices['ny'], vertices['nz']]).T
-    normals = np.zeros_like(positions)
+    normals = np.vstack([vertices['nx'], vertices['ny'], vertices['nz']]).T
     # =========== 随机降采样 ===========
     # N = positions.shape[0]
     # if sample_ratio < 1.0 and "level1" in path:
@@ -882,7 +836,7 @@ def load_and_merge_plys(colmap_path, anchor_path, sample_ratio=1.0):
     anchor_vertices = anchor_ply['vertex']
     anchor_points = np.vstack([anchor_vertices['x'], anchor_vertices['y'], anchor_vertices['z']]).T
     anchor_colors = np.vstack([anchor_vertices['red'], anchor_vertices['green'], anchor_vertices['blue']]).T / 255.0
-    anchor_normals = np.zeros_like(anchor_points)
+    anchor_normals = np.vstack([anchor_vertices['nx'], anchor_vertices['ny'], anchor_vertices['nz']]).T
 
     # 对 Anchor 点云下采样 (可选)
     if sample_ratio < 1.0:
@@ -922,7 +876,7 @@ def storePly(path, xyz, rgb):
     ply_data.write(path)
 
 
-def readColmapSceneInfo(path, images, eval, llffhold=8, sky_seg=False, load_normal=False, load_depth=False,offset=False,x_offset=None,checkpoint=None):
+def readColmapSceneInfo(path, images, eval, llffhold=8, sky_seg=False, load_normal=False, load_depth=False):
     if not eval:
         try:
             cameras_extrinsic_file = os.path.join(path, "sparse/0", "images.bin")
@@ -939,7 +893,6 @@ def readColmapSceneInfo(path, images, eval, llffhold=8, sky_seg=False, load_norm
         # dynamic_dir = "masks"
         dynamic_dir = "/data/ljl/jya_repo/GaussianPro/output/level1/scene_2/test/sky_30000/renders_skymask"
 
-
         # cam_infos_unsorted = readColmapCameras(cam_extrinsics=cam_extrinsics, cam_intrinsics=cam_intrinsics,
         #                                        images_folder=os.path.join(path, reading_dir), dynamic_mask_folder=os.path.join(path,dynamic_dir),
         #                                        sky_seg=sky_seg, load_normal=load_normal, load_depth=load_depth)
@@ -947,17 +900,13 @@ def readColmapSceneInfo(path, images, eval, llffhold=8, sky_seg=False, load_norm
                                                images_folder=os.path.join(path, reading_dir),
                                                dynamic_mask_folder=dynamic_dir,
                                                sky_seg=sky_seg, load_normal=load_normal, load_depth=load_depth)
-        cam_infos_total = sorted(cam_infos_unsorted.copy(), key=lambda x: x.image_name)
+        cam_infos = sorted(cam_infos_unsorted.copy(), key=lambda x: x.image_name)
 
     else:
-        # train views
+
         cameras_extrinsic_file = os.path.join(path, "sparse/0", "images.txt")
         cameras_intrinsic_file = os.path.join(path, "sparse/0", "cameras.txt")
-        if offset:
-            print(f"Rendering with a view offset of {x_offset}!")
-            cam_extrinsics = read_extrinsics_text(cameras_extrinsic_file, x_offset=x_offset)
-        else:
-            cam_extrinsics = read_extrinsics_text(cameras_extrinsic_file)
+        cam_extrinsics = read_extrinsics_text(cameras_extrinsic_file)
         cam_intrinsics = read_intrinsics_text(cameras_intrinsic_file)
 
         total_length = len(cam_extrinsics)
@@ -970,69 +919,9 @@ def readColmapSceneInfo(path, images, eval, llffhold=8, sky_seg=False, load_norm
                                                images_folder=os.path.join(path, reading_dir),
                                                dynamic_mask_folder=os.path.join(path, dynamic_dir),
                                                sky_seg=sky_seg, load_normal=load_normal, load_depth=load_depth,
-                                               time_diff=time_diff, total_length=total_length, ori=True)
-        cam_infos_origin = sorted(cam_infos_unsorted.copy(), key=lambda x: x.image_name)
+                                               time_diff=time_diff, total_length=total_length)
+        cam_infos = sorted(cam_infos_unsorted.copy(), key=lambda x: x.image_name)
 
-        cam_infos_total = []
-        if checkpoint:
-            offset_root = os.path.join(path, "offset_images")
-            offset_dirs = sorted([d for d in os.listdir(offset_root) if d.startswith("offset_")])
-            for i, offset_dir in enumerate(offset_dirs):
-                match = re.match(r"offset_(\d+)", offset_dir)
-                if match:
-                    offset_value = int(match.group(1)) / 10.0
-                else:
-                    print(f"Warning: {offset_dir} 命名不符合 offset_xx 规则，跳过")
-                    continue
-
-                cam_extrinsics = read_extrinsics_text(
-                    cameras_extrinsic_file, x_offset=offset_value
-                )
-                reading_dir = os.path.join("offset_images", offset_dir, "images")
-                cam_infos_unsorted_o = readColmapCameras(
-                    cam_extrinsics=cam_extrinsics,
-                    cam_intrinsics=cam_intrinsics,
-                    images_folder=os.path.join(path, reading_dir),
-                    dynamic_mask_folder=None,
-                    sky_seg=False,
-                    load_normal=load_normal,
-                    load_depth=load_depth,
-                    time_diff=time_diff,
-                    total_length=total_length,
-                    ori=False
-                )
-                print(f"Reading the offset views of {offset_value} completed!")
-
-                cam_infos_o = sorted(cam_infos_unsorted_o.copy(), key=lambda x: x.image_name)
-
-                if i < len(offset_dirs) - 1:  # 不是最后一个文件夹
-                    keep_len = int(len(cam_infos_o) * 0.5)
-                    cam_infos_o = random.sample(cam_infos_o, keep_len)
-                    print(f"Keep {keep_len}/{len(cam_infos_unsorted_o)} views for {offset_dir}")
-                else:  # 最后一个文件夹，全部保留
-                    print(f"Keep all {len(cam_infos_unsorted_o)} views for {offset_dir}")
-                cam_infos_total = cam_infos_total + cam_infos_o
-
-                if i == len(offset_dirs) - 1 and len(offset_dirs) > 3:
-                    keep_len_o = int(len(cam_infos_origin) * 0.75)
-                    cam_infos_origin = random.sample(cam_infos_origin, keep_len_o)
-                    print(
-                        f"Cutting original views and Keep {keep_len_o}/{len(cam_infos_unsorted)} views for {offset_dir}")
-        cam_infos_total = cam_infos_total + cam_infos_origin
-        print(f"There are {len(cam_infos_total)} training views in total")
-        # if checkpoint:
-        #     # offset_0.5m
-        #     cam_extrinsics = read_extrinsics_text(cameras_extrinsic_file, x_offset=0.5)
-        #     reading_dir = "offset_images/offset_05/images" if images == None else images
-        #     cam_infos_unsorted_o1 = readColmapCameras(cam_extrinsics=cam_extrinsics, cam_intrinsics=cam_intrinsics,
-        #                                         images_folder=os.path.join(path, reading_dir), dynamic_mask_folder=None,
-        #                                         sky_seg=False, load_normal=load_normal, load_depth=load_depth,time_diff=time_diff,total_length=total_length)
-        #     cam_infos_o1 = sorted(cam_infos_unsorted_o1.copy(), key=lambda x: x.image_name)
-
-        #     # merge training views(original views + offset views)
-        #     cam_infos = cam_infos + cam_infos_o1
-
-        # test views
         cameras_extrinsic_file = os.path.join(path, "images.txt")
         cameras_intrinsic_file = os.path.join(path, "cameras.txt")
         cam_extrinsics = read_extrinsics_text_test(cameras_extrinsic_file)
@@ -1042,13 +931,18 @@ def readColmapSceneInfo(path, images, eval, llffhold=8, sky_seg=False, load_norm
                                                     images_folder=os.path.join(path, reading_dir),
                                                     dynamic_mask_folder=None,
                                                     sky_seg=False, load_normal=load_normal, load_depth=load_depth,
-                                                    time_diff=time_diff, total_length=total_length,read_test=True, train_cam_infos=cam_infos_origin)
+                                                    time_diff=time_diff, total_length=total_length)
         cam_infos_test = sorted(cam_infos_unsorted_test.copy(), key=lambda x: x.image_name)
+        # cam_infos_unsorted_test = readColmapCameras(cam_extrinsics=cam_extrinsics, cam_intrinsics=cam_intrinsics,
+        #                                 images_folder=os.path.join(path, reading_dir), dynamic_mask_folder=None,
+        #                                 sky_seg=sky_seg, load_normal=load_normal, load_depth=load_depth，time_diff=time_diff,total_length=total_length)
+
     if eval:
-        train_cam_infos = cam_infos_total
+        train_cam_infos = cam_infos
         test_cam_infos = cam_infos_test
+
     else:
-        train_cam_infos = cam_infos_total
+        train_cam_infos = cam_infos
         test_cam_infos = []
 
     nerf_normalization = getNerfppNorm(train_cam_infos)
@@ -1071,9 +965,9 @@ def readColmapSceneInfo(path, images, eval, llffhold=8, sky_seg=False, load_norm
         pcd, aabb = load_and_merge_plys(ply_path, anchor_ply_path)
         # pcd = fetchPly(ply_path)
         # pcd = fetchPlyAnchor(anchor_ply_path)
-    except Exception as e:
+
+    except:
         pcd = None
-        print(f"加载PLY失败: {e}")
 
     scene_info = SceneInfo(point_cloud=pcd,
                            train_cameras=train_cam_infos,
@@ -1275,15 +1169,8 @@ def readColmapSceneInfo(path, images, eval, llffhold=8, sky_seg=False, load_norm
     # out_path = os.path.join(out_dir, cam.image_name+last)
     # cv2.imwrite(out_path, merged)
     # print(f"[OK] 写入：{out_path}")
-    if "scene_2" or "scene_8" or "scene_9" or "scene_0" or "scene_4" in path:
-        pcd_down = downsample_pointcloud(scene_info.point_cloud, ratio=0.05)
-        scene_info = SceneInfo(point_cloud=pcd_down,  # 重新构建 SceneInfo
-                               train_cameras=scene_info.train_cameras,
-                               test_cameras=scene_info.test_cameras,
-                               nerf_normalization=scene_info.nerf_normalization,
-                               ply_path=scene_info.ply_path, cam_frustum_aabb=scene_info.cam_frustum_aabb)
-    else:
-        pcd_down = downsample_pointcloud(scene_info.point_cloud, ratio=0.1)
+    if "level1" or "level2" in path:
+        pcd_down = downsample_pointcloud(scene_info.point_cloud, ratio=0.5)
         scene_info = SceneInfo(point_cloud=pcd_down,  # 重新构建 SceneInfo
                                train_cameras=scene_info.train_cameras,
                                test_cameras=scene_info.test_cameras,

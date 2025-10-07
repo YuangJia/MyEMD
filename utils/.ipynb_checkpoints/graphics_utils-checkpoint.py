@@ -16,7 +16,7 @@ from typing import NamedTuple
 import cv2
 import os
 from torch import Tensor
-# from gaussianpro import propagate
+from gaussianpro import propagate
 from typing import List, Union
 
 

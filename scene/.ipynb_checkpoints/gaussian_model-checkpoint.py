@@ -249,6 +249,19 @@ class GaussianModel:
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
         # print(self._deformation.deformation_net.grid.)
 
+    def load_model(self, path):
+        print("loading model from exists{}".format(path))
+        weight_dict = torch.load(os.path.join(path, "deformation.pth"), map_location="cuda")
+        self._deformation.load_state_dict(weight_dict)
+        self._deformation = self._deformation.to("cuda")
+        self._deformation_table = torch.gt(torch.ones((self.get_xyz.shape[0]), device="cuda"), 0)
+        self._deformation_accum = torch.zeros((self.get_xyz.shape[0], 3), device="cuda")
+        if os.path.exists(os.path.join(path, "deformation_table.pth")):
+            self._deformation_table = torch.load(os.path.join(path, "deformation_table.pth"), map_location="cuda")
+        if os.path.exists(os.path.join(path, "deformation_accum.pth")):
+            self._deformation_accum = torch.load(os.path.join(path, "deformation_accum.pth"), map_location="cuda")
+        self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
+        # print(self._deformation.deformation_net.grid.)
 
     def save_deformation(self, path):
         torch.save(self._deformation.state_dict(), os.path.join(path, "deformation.pth"))
@@ -646,9 +659,8 @@ class GaussianModel:
         grads = self.xyz_gradient_accum / self.denom
         grads[grads.isnan()] = 0.0
 
-        if self.get_xyz.shape[0] < 2000000:
-            self.densify_and_clone(grads, max_grad, extent)
-            self.densify_and_split(grads, max_grad, extent)
+        self.densify_and_clone(grads, max_grad, extent)
+        self.densify_and_split(grads, max_grad, extent)
 
         prune_mask = (self.get_opacity < min_opacity).squeeze()
         if max_screen_size:

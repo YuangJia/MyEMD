@@ -241,7 +241,7 @@ def read_intrinsics_binary(path_to_model_file):
     return cameras
 
 
-def read_extrinsics_text(path,x_offset=None):
+def read_extrinsics_text(path):
     """
     Taken from https://github.com/colmap/colmap/blob/dev/scripts/python/read_write_model.py
     """
@@ -257,9 +257,6 @@ def read_extrinsics_text(path,x_offset=None):
                 image_id = int(elems[0])
                 qvec = np.array(tuple(map(float, elems[1:5])))
                 tvec = np.array(tuple(map(float, elems[5:8])))
-                if x_offset is not None:
-                    # Apply X-offset to translation vector (向右偏移0.4米)
-                    tvec[0] -= x_offset  # 因为TX为负，减去offset使其更负 = 向右移动
                 camera_id = int(elems[8])
                 image_name = elems[9]
                 elems = fid.readline().split()

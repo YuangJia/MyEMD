@@ -52,15 +52,11 @@ def loadCam(args, id, cam_info, resolution_scale):
             cv2.resize(np.array(cam_info.dynamic_image), resolution, interpolation=cv2.INTER_NEAREST),
             dtype=torch.float32) / 255.0
         # resized_image_dynamic_mask = torch.tensor(cv2.resize(cam_info.dynamic_image, resolution, interpolation=cv2.INTER_NEAREST))
-    # if cam_info.sky_mask is not None:
-    #     resized_sky_mask = torch.tensor(cv2.resize(cam_info.sky_mask, resolution, interpolation=cv2.INTER_NEAREST)).to(
-    #         resized_image_rgb.device) / 255.0
-    # else:
-    #     resized_sky_mask = None
-
-    resized_sky_mask = None
     if cam_info.sky_mask is not None:
-        resized_sky_mask = PILtoTorch(cam_info.sky_mask, resolution)
+        resized_sky_mask = torch.tensor(cv2.resize(cam_info.sky_mask, resolution, interpolation=cv2.INTER_NEAREST)).to(
+            resized_image_rgb.device) / 255.0
+    else:
+        resized_sky_mask = None
 
     if cam_info.normal is not None:
         resized_normal = torch.tensor(

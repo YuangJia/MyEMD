@@ -1,16 +1,5 @@
-#
-# Copyright (C) 2023, Inria
-# GRAPHDECO research group, https://team.inria.fr/graphdeco
-# All rights reserved.
-#
-# This software is free for non-commercial, research and evaluation use 
-# under the terms of the LICENSE.md file.
-#
-# For inquiries contact  george.drettakis@inria.fr
-#
-
 import torch
-from scene import Scene
+from scene import Scene, EUVSScene
 import os
 from tqdm import tqdm
 from os import makedirs
@@ -18,51 +7,40 @@ from gaussian_renderer import render
 import torchvision
 from utils.general_utils import safe_state, vis_depth
 from argparse import ArgumentParser
-from arguments import ModelParams, PipelineParams, get_combined_args
+from arguments import ModelParams, PipelineParams, OptimizationParams, get_combined_args
 from gaussian_renderer import GaussianModel
 import imageio
 import numpy as np
 
-def render_set(model_path, name, iteration, views, gaussians, pipeline, background):
-    render_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders")
+
+def render_set(model_path, name, iteration, views, gaussians, opt, background,x_offset=None):
+    if x_offset is not None:
+        render_path = os.path.join(model_path, name, "ours_{}".format(iteration), f"renders_r{x_offset}")
+    else:
+        render_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders")
     gts_path = os.path.join(model_path, name, "ours_{}".format(iteration), "gt")
     depth_path = os.path.join(model_path, name, "ours_{}".format(iteration), "render_depth")
     normal_path = os.path.join(model_path, name, "ours_{}".format(iteration), "render_normal")
-
     makedirs(render_path, exist_ok=True)
     makedirs(gts_path, exist_ok=True)
-    makedirs(depth_path , exist_ok=True)
+    makedirs(depth_path, exist_ok=True)
     makedirs(normal_path, exist_ok=True)
-
+    if "scene" in model_path:
+        last = ".png"
+    else:
+        last = ".jpg"
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
-        renders = render(view, gaussians, pipeline, background, return_depth=True, return_normal=True)
+        renders = render(opt, view, gaussians, background, return_dx=True, iter=iteration, is_train=False)
         rendering = renders["render"]
-        gt = view.original_image[0:3, :, :]
+        img_name = view.image_name
+        torchvision.utils.save_image(rendering, os.path.join(render_path, img_name + last))
 
-        torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
-        torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
 
-        render_depth = renders["render_depth"]
-        if view.sky_mask is not None:
-            render_depth[~(view.sky_mask.to(render_depth.device).to(torch.bool))] = 300
-        render_depth = vis_depth(render_depth.detach().cpu().numpy())[0]
-        imageio.imwrite(os.path.join(depth_path , '{0:05d}'.format(idx) + ".png"), render_depth)
-
-        render_normal = (renders["render_normal"] + 1.0) / 2.0
-        if view.sky_mask is not None:
-            render_normal[~(view.sky_mask.to(rendering.device).to(torch.bool).unsqueeze(0).repeat(3, 1, 1))] = -10
-        # render_normal = renders["render_normal"]
-        np.save(os.path.join(normal_path, '{0:05d}'.format(idx) + ".png"), renders["render_normal"].detach().cpu().numpy())
-        torchvision.utils.save_image(render_normal, os.path.join(normal_path, '{0:05d}'.format(idx) + ".png"))
-        # normal_gt = torch.nn.functional.normalize(view.normal, p=2, dim=0)
-        # render_normal_gt = (normal_gt + 1.0) / 2.0
-        # torchvision.utils.save_image(render_normal_gt, os.path.join(normal_path, '{0:05d}'.format(idx) + "_normalgt.png"))
-        # exit()
-
-def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool):
+def render_sets(dataset: ModelParams, opt: OptimizationParams, iteration: int, pipeline: PipelineParams,
+                skip_train: bool, skip_test: bool):
     with torch.no_grad():
-        gaussians = GaussianModel(dataset.sh_degree)
-        scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False)
+        gaussians = GaussianModel(dataset.sh_degree, opt)
+        scene = EUVSScene(dataset, gaussians, load_iteration=iteration, shuffle=False, offset=True, x_offset=1.0)
 
         # gaussians._scaling[:, 0] = 0.001
         # gaussians._scaling[:, 1] = 0.0005
@@ -77,20 +55,24 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
         # print(min_scale)
         # print(max_scale)
 
-        bg_color = [1,1,1] if dataset.white_background else [0, 0, 0]
+        bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
         background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
         if not skip_train:
-             render_set(dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians, pipeline, background)
+            render_set(dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians, opt,
+                       background,x_offset=1.0)
 
         if not skip_test:
-             render_set(dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background)
+            render_set(dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, opt,
+                       background)
+
 
 if __name__ == "__main__":
     # Set up command line argument parser
     parser = ArgumentParser(description="Testing script parameters")
     model = ModelParams(parser, sentinel=True)
     pipeline = PipelineParams(parser)
+    op = OptimizationParams(parser)
     parser.add_argument("--iteration", default=-1, type=int)
     parser.add_argument("--skip_train", action="store_true")
     parser.add_argument("--skip_test", action="store_true")
@@ -101,4 +83,11 @@ if __name__ == "__main__":
     # Initialize system state (RNG)
     safe_state(args.quiet)
 
-    render_sets(model.extract(args), args.iteration, pipeline.extract(args), args.skip_train, args.skip_test)
+    # render_sets(model.extract(args), op.extract(args) ,args.iteration, pipeline.extract(args), skip_train=False, skip_test=True)
+
+    # render_sets(model.extract(args), op.extract(args) ,25000, pipeline.extract(args), skip_train=False, skip_test=True)
+    # render_sets(model.extract(args), op.extract(args) ,35000, pipeline.extract(args), skip_train=False, skip_test=True)
+    # render_sets(model.extract(args), op.extract(args) ,47000, pipeline.extract(args), skip_train=False, skip_test=True)
+    # render_sets(model.extract(args), op.extract(args) ,60000, pipeline.extract(args), skip_train=False, skip_test=True)
+    # render_sets(model.extract(args), op.extract(args) ,75000, pipeline.extract(args), skip_train=False, skip_test=True)
+    render_sets(model.extract(args), op.extract(args), 35000, pipeline.extract(args), skip_train=False, skip_test=False)
